@@ -1,0 +1,388 @@
+---
+title: "PEC 1 Datos Ómicos Daniel Zamora Solé"
+author: "Daniel Zamora Solé"
+date: "2024-11-05"
+output: pdf_document
+---
+
+
+Esta documentación esta destinada a guiar al usuario por los distintos pasos que sean realizado para llegar a construir el objeto de SummarizedExperiment de la fuente de datos 2023-UGrX-4MetaboAnalystTutorial en el repositorio de https://raw.githubusercontent.com/nutrimetabolomics/metaboData.
+
+Primero realizamos instalamos los componentes necesarios de Bioconductor y la libreria de SummarizedExperiment.
+```{r }
+# Instalación Bioconductor y SummirizedExperiment
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("SummarizedExperiment")
+
+# Cargamos SummarizedExperimenta
+library(SummarizedExperiment)
+
+```
+
+
+A continuación extraeremos los datos planos donde tenemos los experimentos, los metabolitos y la concentración de metabolitos en cada uno, al ser un texto plano tenemos que coger los datos que estan en el bloque delimitado por 'MS_METABOLITE_DATA_START' y 'MS_METABOLITE_DATA_END'.
+```{r}
+
+# Definimos la url de nuestra fuente de datos
+data_url <- "https://raw.githubusercontent.com/nutrimetabolomics/metaboData/main/Datasets/2023-UGrX-4MetaboAnalystTutorial/ST000002_AN000002.txt"
+
+
+lines <- readLines(data_url)
+# Encontramos la línea que contiene 'MS_METABOLITE_DATA_START' y 'MS_METABOLITE_DATA_END'
+start_line <- grep("MS_METABOLITE_DATA_START", lines)
+end_line <- grep("MS_METABOLITE_DATA_END", lines)
+
+data_lines <- lines[(start_line + 1):(end_line - 1)]
+
+#Creamos el dataframe
+data <- read.table(text = data_lines, sep = "\t", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE, fill = TRUE)
+
+
+
+# Miramos los 6 primers para ver el resultado
+head(data)
+
+factors <- data[1, ] # guardamos los factores
+
+# Removemos la fila de factores del dataframe
+data <- data[-1, ]
+rownames(data) <- NULL
+
+# La primera columna es 'Samples' y el resto son nombres de muestras
+colnames(data)[1] <- "Metabolite"
+sample_names <- colnames(data)[-1]
+
+
+head(data)
+```
+
+``` {r}
+
+# Revisamos la estructura de los datos
+str(data)
+
+# Creamos una función para detectar valores no numéricos
+non_numeric_indices <- list()
+
+for (i in 2:ncol(data)) {
+# Identificamos los valores que no pueden ser convertidos a numéricos
+  non_numeric <- !grepl("^[0-9\\.]+$", data[[i]])
+  
+  if (any(non_numeric, na.rm = TRUE)) {
+    non_numeric_indices[[colnames(data)[i]]] <- which(non_numeric)
+  }
+}
+
+# Mostramos las columnas y filas donde hay valores no numéricos
+non_numeric_indices
+
+
+
+# Miramos los valores no numéricos
+for (col_name in names(non_numeric_indices)) {
+  indices <- non_numeric_indices[[col_name]]
+  cat("Columna:", col_name, "\n")
+  print(data[indices, c("Metabolite", col_name)])
+  cat("\n")
+}
+
+# Reemplazamos valores no numéricos por NA
+for (i in 2:ncol(data)) {
+  data[[i]] <- as.numeric(as.character(data[[i]]))
+}
+# Calculamos el número de NAs en cada columna
+na_counts <- sapply(data[, -1], function(x) sum(is.na(x)))
+
+# Mostrar las columnas con NAs y el número de NAs aaaaaa
+na_counts[na_counts > 0]
+
+na_counts
+
+``` 
+
+Una vez tenemos los datos de los experimentos limpios vamos a crear los datos de Mertadatos de las muestras, que son las columnas.
+```{r}
+#Creamos el dataframe de los metadatos de las muestras (colData)
+# Extrarmos los nombres de las muestras (columnas)
+sample_names <- colnames(data)[-1]  # Sacamos la primera columna
+
+# Extraemos los factores correspondientes 
+group_labels <- as.character(factors[-1])
+
+# Limpiamos los nombres de los grupos
+group_labels <- gsub("Transplantation:", "", group_labels)
+group_labels <- factor(group_labels)
+
+# Creamos el dataframe de metadatos de las muestras
+colData <- data.frame(
+  SampleID = sample_names,
+  Group = group_labels,
+  stringsAsFactors = FALSE
+)
+
+# Establecemos los nombres de las filas
+rownames(colData) <- colData$SampleID
+
+colData
+
+
+
+```
+Una vez tenemos los metadatos de las columnas ahora sacaremos los metadatos de las filas. Que serian los metadatos de los distintos tipos de metabolito.
+```{r}
+
+#Creamos el dataframe de metadatos de los metabolitos (las filas)
+# Extraemos los nombres de los metabolitos
+metabolite_names <- data$Metabolite
+
+# Creamos el dataframe de metadatos de los metabolitos
+rowData <- data.frame(
+  Metabolite = metabolite_names,
+  stringsAsFactors = FALSE
+)
+
+# Establecer los nombres de las filas
+rownames(rowData) <- metabolite_names
+
+head(rowData)
+
+```
+
+```{r}
+#Preparamos la matriz de expresión
+# Removemos la columna Metabolite del dataframe "data"
+expr_data <- data[, -1]
+
+# Convertimos los valores a numéricos
+expr_matrix <- as.matrix(sapply(expr_data, as.numeric))
+
+# Ponemos  los nombres de las filas y columnas
+rownames(expr_matrix) <- metabolite_names
+colnames(expr_matrix) <- sample_names
+
+expr_matrix[1:5, 1:5]
+
+```
+```{r}
+# Creamos una columna con las etiquetas "B" o "A" según el grupo
+colData$Label <- ifelse(colData$Group == "Before transplantation", "B", "A")
+# Crear una nueva columna para los nombres modificados sin alterar SampleID
+colData$SampleID_modified <- paste0(colData$SampleID, "_", colData$Label)
+
+# Actualizamo los nombres de las filas en colData
+rownames(colData) <- colData$SampleID_modified
+# Actualizamos los nombres de las columnas en expr_matrix
+colnames(expr_matrix) <- colData$SampleID_modified
+colData
+
+#Mostramos los nombres de las columnas de expr_matrix
+colnames(expr_matrix)
+
+#Comparamos que los nombres coinciden.
+all(colnames(expr_matrix) == rownames(colData))
+
+```
+Ahora ya tenemos todo listo para crear el SummarizedExperiment, poruqé tenemos tanto la matriz de expresión con los datos del experimento. Los datos que pueden tener los metabolitos y los metadatos de los experimentos.
+
+Creamos el objeto "se" y lo ejecutamos para ver que todo encaja y guardamos el objeto .rds.
+```{r}
+
+# Creamos el objeto SummarizedExperiment
+se <- SummarizedExperiment(
+  assays = list(counts = expr_matrix),
+  rowData = rowData,
+  colData = colData
+)
+# Resumen del objeto SummarizedExperiment
+se
+
+
+# Guardem l'objecte SummarizedExperiment
+saveRDS(se, "metabolomics_se.rds")
+
+
+```
+
+A continuación haremos un rápido Analisis con el objeto de SummaryExpression creado anteriormente para ver que funciona como deseamo usando Componentes Principales.
+```{r}
+
+# Instlamos y cargamos paquete de ggplot para graficar
+
+if (!requireNamespace("ggplot2", quietly = TRUE))
+    install.packages("ggplot2")
+if (!requireNamespace("ggfortify", quietly = TRUE))
+    install.packages("ggfortify")
+library(ggplot2)
+library(ggfortify)
+
+# Realizamos PCA.
+pca_result <- prcomp(t(assay(se)), scale. = TRUE)
+# Crearmos el dataframe para el gráfico plot
+pca_data <- data.frame(pca_result$x, Group = colData(se)$Group, SampleID = colData(se)$SampleID)
+
+# Generamos Gráfico del PCA con etiquetas
+ggplot(pca_data, aes(x = PC1, y = PC2, color = Group)) +
+  geom_point(size = 5) +
+  geom_text(aes(label = SampleID), hjust = 0.5, vjust = -1, size = 3) +
+  theme_minimal() +
+  labs(title = "PCA de muestras de metabolómica", x = "PC1", y = "PC2")
+
+
+
+```
+Se pueden observar en el gráfico  anterior como las muestras se agrupan y se diferencian entre sí en función del perfil metabolómico
+
+
+A continuación haremos el mismo analiss de PCA para los metabolitos para los metabolitos 
+```{r}
+# Realizamos PCA sobre los metabolitos
+pca_metabolites <- prcomp(assay(se), scale. = TRUE)
+
+# Creamos dataframe para el PCA de metabolitos y añadimos los nombres
+pca_metabolites_data <- data.frame(pca_metabolites$x)
+pca_metabolites_data$Metabolite <- rownames(pca_metabolites$x)
+
+ggplot(pca_metabolites_data, aes(x = PC1, y = PC2)) +
+  geom_point(size = 2) +
+  geom_text(aes(label = Metabolite), hjust = 0.5, vjust = -0.5, size = 3) +
+  theme_minimal() +
+  labs(title = "PCA de metabolitos", x = "PC1", y = "PC2")
+```
+Como hemos visto que hay un metablito que esta muy alejado del resto vamos a sacarlo acotando la visualización
+
+
+```{r}
+expr_matrix <- assay(se)
+
+
+metabolite_info <- rowData(se)
+metabolite_info
+```
+Ahora vamos a añadir más metadatos que no hemos añadido con anterioridad a los metabolitos, de esta manera tenemos la info más completa.
+
+```{r}
+
+# LeeMOS todas las líneas del archivo de origen por si a caso.
+lines <- readLines(data_url)
+
+# Encontrar¡mos los índices de inicio y fin de la sección de metadatos de metabolitos
+metabolites_start <- grep("METABOLITES_START", lines)
+metabolites_end <- grep("METABOLITES_END", lines)
+# Extraemos las líneas de la sección de metadatos de los metabolitos
+metabolites_lines <- lines[(metabolites_start + 1):(metabolites_end - 1)]
+
+# Leemos los metadatos de los metabolitos en un dataframe
+metabolites_meta <- read.table(text = metabolites_lines, sep = "\t", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE, fill = TRUE)
+
+# Mostramos las primeras filas del dataframe con los nuevos datos
+head(metabolites_meta)
+
+
+
+```
+
+```{r}
+# Cargar la librería dplyr
+library(dplyr)
+
+rowData(se) <- DataFrame(Metabolite = rownames(se))
+
+# Función para limpiar y estandarizar nombres
+clean_names <- function(x) {
+  x <- tolower(x)
+  x <- trimws(x)
+  x <- gsub("[^a-z0-9]", "", x)
+  return(x)
+}
+
+# Limpiamos los nombres de los metabolitos en ambos conjuntos de datos
+metabolites_meta$clean_name <- clean_names(metabolites_meta$metabolite_name)
+rowData(se)$clean_name <- clean_names(rownames(se))
+
+# Verificamos coincidencias después de limpiar los nombres
+common_metabolites <- intersect(rowData(se)$clean_name, metabolites_meta$clean_name)
+cat("Número de metabolitos coincidentes:", length(common_metabolites), "\n")
+
+# Si hay metabolitos que no coinciden, podemos revisarlos
+metabolites_no_match <- setdiff(rowData(se)$clean_name, metabolites_meta$clean_name)
+if (length(metabolites_no_match) > 0) {
+  cat("Metabolitos en 'se' que no coinciden con metadatos:", metabolites_no_match, "\n")
+}
+# Seleccionamos lascolumnas necesarias de metabolites_meta, excluyendo 'metabolite_name' original
+metabolites_meta_subset <- metabolites_meta %>%
+  select(-metabolite_name)
+
+# Añadir una columna auxiliar para mantener el orden
+rowData(se)$order <- seq_len(nrow(rowData(se)))
+rowData_merged <- rowData(se) %>%
+  as.data.frame() %>%
+  left_join(metabolites_meta_subset, by = "clean_name")
+
+# Se Ordena el resultado según la columnaorder y remover columnas auxiliares
+rowData_merged <- rowData_merged %>%
+  arrange(order) %>%
+  select(-clean_name, -order)
+
+# Actualizar el rowData del SummarizedExperiment
+rowData(se) <- rowData_merged
+
+# Aseguramos que los nombres de las filas se mantienen correctamente
+rownames(rowData(se)) <- rowData(se)$Metabolite
+
+# Se muestan las primeras filas del rowData actualizado
+head(rowData(se))
+
+
+```
+
+```{r}
+
+# Acceder a la matriz de expresión de metabolitos
+expr_matrix <- assay(se)
+
+
+metabolite_info <- rowData(se)
+
+
+# Acceder a los metadatos de las muestras
+sample_info <- colData(se)
+sample_info
+
+
+# Guardar el objeto para uso futuro
+saveRDS(se, "datos_metabolomicos_se.rds")
+
+# Cargar el objeto en otra sesión
+se <- readRDS("datos_metabolomicos_se.rds")
+
+se
+```
+A continuación subiremos los archivos a GIT: Primero configuraremos para que Rstudio se conecte con mi cuenta de GIT:.
+Después guardaremos en un repositorio local los archivos necesarios:
+- El informe al apretar .knit ya se guarda junto con el archivo rmd. en este caso en pdf
+- Guardaremos el archivo se en formato Rda:
+```{r}
+save(se, file = "metabolomics_se.Rda")
+
+```
+
+
+-Generamos el script con solo el código R a través del Rmd.
+```{r}
+
+library(knitr)
+
+# Extraer el código R del archivo Rmd
+purl("PEC 1 Datos Ómicos DZ.Rmd", output = "PEC 1 Datos Ómicos DZ.R", documentation = 0)
+```
+
+- Generamos el texto plano de los datos de entrada 
+
+
+Y una vez tenemos todo guardaremos nuestro proyecto en GIT desde Rstudio creando un nuevo proyecto. Enlazandolo con el repositorio de Git y cargando nuestros archivos.
+
+Subiendolo al siguiente repositorio: 
+https://github.com/dzamoraso/zamora_sole_dani_PEC1/
+
