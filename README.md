@@ -9,16 +9,16 @@ Este repositorio contiene los archivos relacionados con el análisis de datos de
   - `metabolomics_se.Rda`: Objeto `SummarizedExperiment` con datos y metadatos.
 
 - **`scripts/`**
-  - `analisis_metabolomica.R`: Código R utilizado para la exploración de los datos.
+  - `PEC 1 Datos Ómicos DZ.R`: Código R utilizado para la exploración de los datos.
 
 - **`report/`**
-  - `informe_metabolomica.Rmd`: Archivo RMarkdown del informe.
-  - `informe_metabolomica.pdf`: Informe generado en PDF.
+  - `PEC-1-Datos-Ómicos-DZ.Rmd`: Archivo RMarkdown del informe.
+  - `PEC-1-Datos-Ómicos-DZ.pdf`: Informe generado en PDF.
 
 
 ## Instrucciones
 
-- Para reproducir el análisis, abre `scripts/analisis_metabolomica.R` en RStudio y ejecuta el código.
+- Para reproducir el análisis, abre `scripts/PEC 1 Datos Ómicos DZ.R` en RStudio y ejecuta el código.
 
-- El informe detallado se encuentra en `report/informe_metabolomica.pdf`.
+- El informe detallado se encuentra en `report/PEC-1-Datos-Ómicos-DZ.pdf`.
 
